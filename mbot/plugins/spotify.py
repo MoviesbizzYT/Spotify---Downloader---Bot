@@ -188,16 +188,24 @@ async def spotify_dl(Mbot,message: Message):
       #      except:
       #          pass
       #      await sleep(0.6)
-            try:
-               path = await download_songs(item,randomdir)
-            except Exception as e:
-                pass
-          #      await Mbot.send_message(BUG,e)
-                await message.reply_text(f"[{song.get('name')} - {song.get('artist')}](https://open.spotify.com/track/{song.get('deezer_id')}) Track Not Found ⚠️")
-## optional you can clear this or add this by using #
-                await message.reply(e)
-         #       await message.reply_text(f"try `/saavn {song.get('name')} - {song.get('artist')}`")
-            thumbnail = await thumb_down(item['album']['images'][0]['url'],song.get('deezer_id'))
+                         try:
+                path = await download_songs(item, randomdir)
+             except Exception as e:
+                LOGGER.error(f"Spotify download error: {e}")
+                path = None
+
+             if not path or not os.path.isfile(path):
+                await message.reply_text(
+                    f"⚠️ Unable to download: "
+                    f"{song.get('name')} - {song.get('artist')}\n"
+                    "The audio source is unavailable."
+                )
+                continue
+
+             thumbnail = await thumb_down(
+                 item['album']['images'][0]['url'],
+                 song.get('deezer_id')
+             )
             try:
              #   await sleep(0.6)
                 audio = FLAC(path)
