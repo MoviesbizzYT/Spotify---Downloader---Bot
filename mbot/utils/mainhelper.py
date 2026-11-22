@@ -114,7 +114,21 @@ def fetch_spotify_track(client,item_id):
     track_num = item['track_number']
     deezer_id = item_id
     cover = item['album']['images'][0]['url'] if len(item['album']['images']) > 0 else None
-    genre = client.artist(artist_id=item['artists'][0]['uri'])['genres'][0] if len(client.artist(artist_id=item['artists'][0]['uri'])['genres']) > 0 else ""
+    genre = ""
+
+try:
+    artist_info = client.artist(
+        artist_id=item['artists'][0]['uri']
+    )
+
+    genres = artist_info.get('genres') or []
+
+    if genres:
+        genre = genres[0]
+
+except Exception as e:
+    LOGGER.warning(f"Could not fetch artist genre: {e}")
+    genre = ""
     offset = 0
     return {
             "name": track_name,
