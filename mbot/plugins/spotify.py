@@ -33,6 +33,7 @@ from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
 #import psutil
 from os import mkdir
+import os
 from os import environ
 from shutil import rmtree
 #from Script import script
@@ -62,6 +63,26 @@ from requests.exceptions import MissingSchema
 client = Spotify(auth_manager=SpotifyClientCredentials())
 PICS = ("mbot/1162775.jpg mbot/danny-howe-bn-D2bCvpik-unsplash.jpg mbot/saurabh-gill-38RthwbB3nE-unsplash.jpg").split()
 MAIN = bool(environ.get('MAIN', None))
+
+
+async def _download_track_or_report(message, item, song, download_dir):
+    """Download a track and report failures instead of using an invalid path."""
+    try:
+        path = await download_songs(item, download_dir)
+        if path and os.path.isfile(path):
+            return path
+        error_text = "The configured audio source did not return an audio file."
+    except Exception as exc:
+        LOGGER.exception("Spotify track download failed")
+        error_text = str(exc) or exc.__class__.__name__
+
+    track_name = song.get("name", "Unknown track")
+    artist_name = song.get("artist", "Unknown artist")
+    await message.reply_text(
+        f"⚠️ Could not obtain audio for **{track_name} - {artist_name}**.\n"
+        f"Reason: `{error_text[:700]}`"
+    )
+    return None
 genius = Genius("api_key")
 LOG_TEXT_P = """
 ID - <code>{}</code>
@@ -188,24 +209,10 @@ async def spotify_dl(Mbot,message: Message):
       #      except:
       #          pass
       #      await sleep(0.6)
-                         try:
-                path = await download_songs(item, randomdir)
-             except Exception as e:
-                LOGGER.error(f"Spotify download error: {e}")
-                path = None
-
-             if not path or not os.path.isfile(path):
-                await message.reply_text(
-                    f"⚠️ Unable to download: "
-                    f"{song.get('name')} - {song.get('artist')}\n"
-                    "The audio source is unavailable."
-                )
-                continue
-
-             thumbnail = await thumb_down(
-                 item['album']['images'][0]['url'],
-                 song.get('deezer_id')
-             )
+            path = await _download_track_or_report(message, item, song, randomdir)
+            if not path:
+                return
+            thumbnail = await thumb_down(item['album']['images'][0]['url'],song.get('deezer_id'))
             try:
              #   await sleep(0.6)
                 audio = FLAC(path)
@@ -292,15 +299,9 @@ async def spotify_dl(Mbot,message: Message):
                   #  PForCopy = await message.reply_text(f"🎧 Title : `{song['name']}`\n🎤 Artist : `{song['artist']}`\n💽 Album : `{song['album']}`\n🗓 Release Year: `{song['year']}`\n\n[IMAGE]({song.get('cover')})\ntrack id:`{song['deezer_id']}`")
                 #PForCopy = await message.reply_photo(song.get('cover'),caption=f"🎧 Title : `{song['name']}`\n🎤 Artist : `{song['artist']}`\n💽 Album : `{song['album']}`\n🎼 Genre : `{song['genre']}`\n🗓 Release Year: `{song['year']}`\n🔢 Track No: `{song['playlist_num']}`\n🔢 Total Track: `{total_tracks}`\n\n[IMAGE]({song.get('cover')})\ntrack id:`{song['deezer_id']}")
           #      await sleep(0.6)
-                try:
-                   path = await download_songs(item,randomdir)
-                except Exception as e:
-                    pass
-                    await message.reply_text(f"[{song.get('name')} - {song.get('artist')}](https://open.spotify.com/track/{song.get('deezer_id')}) Track Not Found ⚠️")
-## optional you can clear this or add this by using #
-                    await message.reply(e)
-            #        await message.reply_text(f"try `/saavn {song.get('name')} - {song.get('artist')}`")
-            #        await message.reply(f"[Click Here](https://t.me/)")
+                path = await _download_track_or_report(message, item, song, randomdir)
+                if not path:
+                    continue
                 thumbnail = await thumb_down(song.get('cover'),song.get('deezer_id'))
             #    await sleep(0.6)
                 audio = FLAC(path)
@@ -370,16 +371,9 @@ async def spotify_dl(Mbot,message: Message):
                 song = await fetch_spotify_track(client,track.get('id'))
               #  cForChat = await message.reply_chat_action(enums.ChatAction.TYPING)
              #   sleeeps = await sleep (0.6)
-                try:
-                   path = await download_songs(item,randomdir)
-                except Exception as e:
-                    pass
-                    await message.reply_text(f"[{song.get('name')} - {song.get('artist')}](https://open.spotify.com/track/{song.get('deezer_id')}) Track Not Found ⚠️")
-## optional you can clear this or add this by using #
-                    await message.reply(e)
-             #       await message.reply_text(f"try `/saavn {song.get('name')} - {song.get('artist')}`")
-            #        await message.reply(f"[Click Here](https://t.me/)")
-               # path = await download_songs(item,randomdir)
+                path = await _download_track_or_report(message, item, song, randomdir)
+                if not path:
+                    continue
                 thumbnail = await thumb_down(song.get('cover'),song.get('deezer_id'))
            #     await sleep(0.6)
                 audio = FLAC(path)
@@ -450,15 +444,9 @@ async def spotify_dl(Mbot,message: Message):
                  track = client.track(track_id=item['id'])
                  track_no = 1
                 # await sleep(0.6)
-                 try:
-                     path = await download_songs(item,randomdir)
-                 except Exception as e:
-                     pass
-                     await message.reply_text(f"[{song.get('name')} - {song.get('artist')}](https://open.spotify.com/track/{song.get('deezer_id')}) Track Not Found ⚠️")
-## optional you can clear this or add this by using #
-                     await message.reply(e)
-            #         await message.reply_text(f"try `/saavn {song.get('name')} - {song.get('artist')}`")
-            #         await message.reply(f"[Click Here](https://t.me/)")
+                 path = await _download_track_or_report(message, item, song, randomdir)
+                 if not path:
+                     continue
                  thumbnail = await thumb_down(song.get('cover'),song.get('deezer_id'))
                  audio = FLAC(path)
                  try:
@@ -571,12 +559,9 @@ async def spotify_dl(Mbot,message: Message):
         except:
             pass
         try:
-            await message.reply_text(f"Done✅",   
-         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Feedback", callback_data="feed")]]))
-            await message.reply_text(f"Check out @spotify_downloa (music)  @spotifynewss(News)")
             await m.delete()
-        except:
-            pass 
+        except Exception:
+            pass
        # await message.reply_text(f"thumbnail and details is temp removed due to  there is  something going on telegram side:)")
            
 @Mbot.on_callback_query(filters.regex(r"feed"))
