@@ -8,7 +8,6 @@ Copyright (c) 2022 Daniel
 import os
 from random import randint
 
-from yt_dlp import YoutubeDL
 from mbot import LOGGER, LOG_GROUP, BUG
 from requests import get
 from asyncio import sleep
@@ -194,150 +193,85 @@ def fetch_spotify_track(client, item_id):
     }
 
 
+def _search_saavn_tracks(query, limit=5):
+    """Search JioSaavn for metadata and official page URLs; no audio download."""
+    response = get(
+        "https://saavn.dev/search/songs",
+        params={"query": query, "page": 1, "limit": limit},
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json() or {}
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    results = data.get("results", []) if isinstance(data, dict) else []
+
+    tracks = []
+    for track in results[:limit]:
+        album = track.get("album") or {}
+        artists = track.get("primaryArtists") or (track.get("artists") or {}).get("primary", [])
+        if isinstance(artists, list):
+            artist_names = ", ".join(
+                a.get("name", "") if isinstance(a, dict) else str(a) for a in artists
+            ).strip(", ")
+        else:
+            artist_names = str(artists or "")
+        images = track.get("image") or []
+        image_url = images[-1].get("url", "") if isinstance(images, list) and images else ""
+        tracks.append({
+            "name": track.get("name") or "",
+            "artist": artist_names,
+            "album": album.get("name", "") if isinstance(album, dict) else str(album),
+            "url": track.get("url") or "",
+            "duration": track.get("duration"),
+            "image": image_url,
+            "source": "JioSaavn",
+        })
+    return tracks
+
+
+@sync_to_async
+def search_saavn_tracks(query, limit=5):
+    """Async helper for Spotify handlers to search matching JioSaavn tracks."""
+    return _search_saavn_tracks(query, limit)
+
+
 @sync_to_async
 def download_songs(item, download_directory="."):
     """
-    Download audio from an authorized source
-    using yt-dlp and convert it to FLAC.
+    Legacy compatibility only. YouTube extraction is removed.
+
+    JioSaavn search results currently provide metadata and official listening
+    links, not a licensed downloadable audio file. The Spotify handler must
+    call search_saavn_tracks() and present the official link.
     """
-
-    os.makedirs(download_directory, exist_ok=True)
-
-    file = (
-        f"{download_directory}/"
-        f"{item['name']} - {item['artists'][0]['name']}"
-    )
-
-    query = (
-        f"{item['name']} - {item['artists'][0]['name']}"
-    ).replace(":", "").replace('"', "")
-
-    ydl_opts = {
-        "format": "bestaudio",
-        "default_search": "ytsearch",
-        "noplaylist": True,
-        "nocheckcertificate": True,
-        "outtmpl": file,
-        "quiet": True,
-        "addmetadata": True,
-        "prefer_ffmpeg": False,
-        "geo_bypass": True,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "flac",
-            "preferredquality": "693"
-        }]
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(
-                f"ytsearch:{query}",
-                download=True
+    track_name = (item or {}).get("name") or ""
+    artists = (item or {}).get("artists") or []
+    artist_name = artists[0].get("name", "") if artists and isinstance(artists[0], dict) else ""
+    query = f"{track_name} {artist_name}".strip()
+    try:
+        matches = _search_saavn_tracks(query, limit=3) if query else []
+        if matches:
+            LOGGER.info(
+                "JioSaavn matches for %s: %s",
+                query,
+                ", ".join(m.get("url", "") for m in matches if m.get("url")),
             )
-
-            entry = info["entries"][0]
-            filename = ydl.prepare_filename(entry)
-
-            return os.path.splitext(filename)[0] + ".flac"
-
-        except Exception as e:
-            LOGGER.error(f"Audio download failed: {e}")
-
-            if FIXIE_SOCKS_HOST:
-                try:
-                    ydl_opts["proxy"] = f"socks5://{FIXIE_SOCKS_HOST}"
-
-                    with YoutubeDL(ydl_opts) as proxy_ydl:
-                        info = proxy_ydl.extract_info(
-                            f"ytsearch:{query}",
-                            download=True
-                        )
-
-                        entry = info["entries"][0]
-                        filename = proxy_ydl.prepare_filename(entry)
-
-                        return os.path.splitext(filename)[0] + ".flac"
-
-                except Exception as proxy_error:
-                    LOGGER.error(
-                        f"Proxy download failed: {proxy_error}"
-                    )
-
-            return None
+        else:
+            LOGGER.info("No JioSaavn matches found for %s", query)
+    except Exception as exc:
+        LOGGER.error("JioSaavn search failed for %s: %s", query, exc)
+    return None
 
 
 @sync_to_async
 def download_dez(song, download_directory="."):
-    """
-    Download audio for a Deezer track using
-    an authorized audio source.
-    """
-
-    os.makedirs(download_directory, exist_ok=True)
-
-    file = (
-        f"{download_directory}/"
-        f"{song['name']} - {song['artist']}"
+    """Legacy compatibility stub; no YouTube extraction or audio redistribution."""
+    LOGGER.info(
+        "Skipping legacy Deezer audio extraction for %s - %s",
+        (song or {}).get("name", ""),
+        (song or {}).get("artist", ""),
     )
-
-    query = (
-        f"{song.get('name')} - {song.get('artist')}"
-    ).replace(":", "").replace('"', "").strip()
-
-    ydl_opts = {
-        "format": "bestaudio",
-        "default_search": "ytsearch",
-        "noplaylist": True,
-        "nocheckcertificate": True,
-        "outtmpl": file,
-        "quiet": True,
-        "addmetadata": True,
-        "prefer_ffmpeg": False,
-        "geo_bypass": True,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "flac",
-            "preferredquality": "824"
-        }]
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(
-                f"ytsearch:{query}",
-                download=True
-            )
-
-            entry = info["entries"][0]
-            filename = ydl.prepare_filename(entry)
-
-            return os.path.splitext(filename)[0] + ".flac"
-
-        except Exception as e:
-            LOGGER.error(f"Deezer audio download failed: {e}")
-
-            if FIXIE_SOCKS_HOST:
-                try:
-                    ydl_opts["proxy"] = FIXIE_SOCKS_HOST
-
-                    with YoutubeDL(ydl_opts) as proxy_ydl:
-                        info = proxy_ydl.extract_info(
-                            f"ytsearch:{query}",
-                            download=True
-                        )
-
-                        entry = info["entries"][0]
-                        filename = proxy_ydl.prepare_filename(entry)
-
-                        return os.path.splitext(filename)[0] + ".flac"
-
-                except Exception as proxy_error:
-                    LOGGER.error(
-                        f"Proxy download failed: {proxy_error}"
-                    )
-
-            return None
+    return None
 
 
 @sync_to_async
